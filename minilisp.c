@@ -385,13 +385,7 @@ static Obj *acons(void *root, Obj **x, Obj **y, Obj **a) {
 #define SYMBOL_MAX_LEN 200
 const char symbol_chars[] = "~!@#$%^&*-_=+:/?<>";
 
-static Obj *read_expr(void *root);
-
-static int peek(void) {
-    int c = getchar();
-    ungetc(c, stdin);
-    return c;
-}
+static Obj *read_expr(void *root, char **strp);
 
 // Destructively reverses the given list.
 static Obj *reverse(Obj *p) {
@@ -406,32 +400,34 @@ static Obj *reverse(Obj *p) {
 }
 
 // Skips the input until newline is found. Newline is one of \r, \r\n or \n.
-static void skip_line(void) {
+static void skip_line(char **strp) {
     for (;;) {
-        int c = getchar();
-        if (c == EOF || c == '\n')
+        if (!**strp)
+            return;
+        char c = *(*strp)++;
+        if (c == '\n')
             return;
         if (c == '\r') {
-            if (peek() == '\n')
-                getchar();
+            if (**strp == '\n')
+                (*strp)++;
             return;
         }
     }
 }
 
 // Reads a list. Note that '(' has already been read.
-static Obj *read_list(void *root) {
+static Obj *read_list(void *root, char **strp) {
     DEFINE3(obj, head, last);
     *head = Nil;
     for (;;) {
-        *obj = read_expr(root);
+        *obj = read_expr(root, strp);
         if (!*obj)
             error("Unclosed parenthesis");
         if (*obj == Cparen)
             return reverse(*head);
         if (*obj == Dot) {
-            *last = read_expr(root);
-            if (read_expr(root) != Cparen)
+            *last = read_expr(root, strp);
+            if (read_expr(root, strp) != Cparen)
                 error("Closed parenthesis expected after dot");
             Obj *ret = reverse(*head);
             (*head)->cdr = *last;
@@ -454,59 +450,59 @@ static Obj *intern(void *root, char *name) {
 }
 
 // Reader marcro ' (single quote). It reads an expression and returns (quote <expr>).
-static Obj *read_quote(void *root) {
+static Obj *read_quote(void *root, char **strp) {
     DEFINE2(sym, tmp);
     *sym = intern(root, "quote");
-    *tmp = read_expr(root);
+    *tmp = read_expr(root, strp);
     *tmp = cons(root, tmp, &Nil);
     *tmp = cons(root, sym, tmp);
     return *tmp;
 }
 
-static int read_number(int val) {
-    while (isdigit(peek()))
-        val = val * 10 + (getchar() - '0');
+static int read_number(char **strp, int val) {
+    while (isdigit(**strp))
+        val = val * 10 + (*(*strp)++ - '0');
     return val;
 }
 
-static Obj *read_symbol(void *root, char c) {
+static Obj *read_symbol(void *root, char **strp, char c) {
     char buf[SYMBOL_MAX_LEN + 1];
     buf[0] = c;
     int len = 1;
-    while (isalnum(peek()) || strchr(symbol_chars, peek())) {
+    while (isalnum(**strp) || strchr(symbol_chars, **strp)) {
         if (SYMBOL_MAX_LEN <= len)
             error("Symbol name too long");
-        buf[len++] = getchar();
+        buf[len++] = *(*strp)++;
     }
     buf[len] = '\0';
     return intern(root, buf);
 }
 
-static Obj *read_expr(void *root) {
+static Obj *read_expr(void *root, char **strp) {
     for (;;) {
-        int c = getchar();
+        if (!**strp)
+            return NULL;
+        char c = *(*strp)++;
         if (c == ' ' || c == '\n' || c == '\r' || c == '\t')
             continue;
-        if (c == EOF)
-            return NULL;
         if (c == ';') {
-            skip_line();
+            skip_line(strp);
             continue;
         }
         if (c == '(')
-            return read_list(root);
+            return read_list(root, strp);
         if (c == ')')
             return Cparen;
         if (c == '.')
             return Dot;
         if (c == '\'')
-            return read_quote(root);
+            return read_quote(root, strp);
         if (isdigit(c))
-            return make_int(root, read_number(c - '0'));
-        if (c == '-' && isdigit(peek()))
-            return make_int(root, -read_number(0));
+            return make_int(root, read_number(strp, c - '0'));
+        if (c == '-' && isdigit(**strp))
+            return make_int(root, -read_number(strp, 0));
         if (isalpha(c) || strchr(symbol_chars, c))
-            return read_symbol(root, c);
+            return read_symbol(root, strp, c);
         error("Don't know how to handle %c", c);
     }
 }
@@ -959,6 +955,8 @@ static void define_primitives(void *root, Obj **env) {
 // Entry point
 //======================================================================
 
+#define INPUT_BUF_SIZE 1024
+
 // Returns true if the environment variable is defined and not the empty string.
 static bool getEnvFlag(char *name) {
     char *val = getenv(name);
@@ -981,9 +979,18 @@ int main(int argc, char **argv) {
     define_constants(root, env);
     define_primitives(root, env);
 
+    // Input string
+    char buf[INPUT_BUF_SIZE] = {0};
+    if (!fread(buf, 1, sizeof(buf), stdin))
+        return 0;
+    buf[INPUT_BUF_SIZE - 1] = '\0';
+    char *str = buf;
+
     // The main loop
     for (;;) {
-        *expr = read_expr(root);
+        if (!*str)
+            return 0;
+        *expr = read_expr(root, &str);
         if (!*expr)
             return 0;
         if (*expr == Cparen)
