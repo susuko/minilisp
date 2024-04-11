@@ -507,30 +507,33 @@ static Obj *read_expr(void *root, char **strp) {
     }
 }
 
+#define MAX(a, b)                               \
+    (((a) > (b)) ? (a) : (b))
+
 // Prints the given object.
-static void print(Obj *obj) {
+static int snprint(char *buf, int max_len, Obj *obj) {
+    int len = 0;
     switch (obj->type) {
     case TCELL:
-        printf("(");
+        len += snprintf(buf + len, MAX(max_len - len, 0), "(");
         for (;;) {
-            print(obj->car);
+            len += snprint(buf + len, MAX(max_len - len, 0), obj->car);
             if (obj->cdr == Nil)
                 break;
             if (obj->cdr->type != TCELL) {
-                printf(" . ");
-                print(obj->cdr);
+                len += snprintf(buf + len, MAX(max_len - len, 0), " . ");
+                len += snprint(buf + len, MAX(max_len - len, 0), obj->cdr);
                 break;
             }
-            printf(" ");
+            len += snprintf(buf + len, MAX(max_len - len, 0), " ");
             obj = obj->cdr;
         }
-        printf(")");
-        return;
+        len += snprintf(buf + len, MAX(max_len - len, 0), ")");
+        return len;
 
 #define CASE(type, ...)                         \
     case type:                                  \
-        printf(__VA_ARGS__);                    \
-        return
+        return snprintf(buf, max_len, __VA_ARGS__)
     CASE(TINT, "%d", obj->value);
     CASE(TSYMBOL, "%s", obj->name);
     CASE(TPRIMITIVE, "<primitive>");
@@ -541,7 +544,7 @@ static void print(Obj *obj) {
     CASE(TNIL, "()");
 #undef CASE
     default:
-        error("Bug: print: Unknown tag type: %d", obj->type);
+        error("Bug: snprint: Unknown tag type: %d", obj->type);
     }
 }
 
@@ -875,8 +878,14 @@ static Obj *prim_macroexpand(void *root, Obj **env, Obj **list) {
 static Obj *prim_println(void *root, Obj **env, Obj **list) {
     DEFINE1(tmp);
     *tmp = (*list)->car;
-    print(eval(root, env, tmp));
-    printf("\n");
+
+    Obj *eval_ret = eval(root, env, tmp);
+    int output_len = snprint(NULL, 0, eval_ret);
+    char *output_buf = malloc(output_len + 1);
+    snprint(output_buf, output_len + 1, eval_ret);
+    printf("%s\n", output_buf);
+    free(output_buf);
+
     return Nil;
 }
 
@@ -980,11 +989,11 @@ int main(int argc, char **argv) {
     define_primitives(root, env);
 
     // Input string
-    char buf[INPUT_BUF_SIZE] = {0};
-    if (!fread(buf, 1, sizeof(buf), stdin))
+    char input_buf[INPUT_BUF_SIZE] = {0};
+    if (!fread(input_buf, 1, sizeof(input_buf), stdin))
         return 0;
-    buf[INPUT_BUF_SIZE - 1] = '\0';
-    char *str = buf;
+    input_buf[INPUT_BUF_SIZE - 1] = '\0';
+    char *str = input_buf;
 
     // The main loop
     for (;;) {
@@ -997,7 +1006,12 @@ int main(int argc, char **argv) {
             error("Stray close parenthesis");
         if (*expr == Dot)
             error("Stray dot");
-        print(eval(root, env, expr));
-        printf("\n");
+
+        Obj *eval_ret = eval(root, env, expr);
+        int output_len = snprint(NULL, 0, eval_ret);
+        char *output_buf = malloc(output_len + 1);
+        snprint(output_buf, output_len + 1, eval_ret);
+        printf("%s\n", output_buf);
+        free(output_buf);
     }
 }
