@@ -392,7 +392,7 @@ static Obj *acons(void *root, Obj **x, Obj **y, Obj **a) {
 #define SYMBOL_MAX_LEN 200
 const char symbol_chars[] = "~!@#$%^&*-_=+:/?<>";
 
-static Obj *read_expr(void *root, char **strp);
+static Obj *read_expr(void *root, const char **strp);
 
 // Destructively reverses the given list.
 static Obj *reverse(Obj *p) {
@@ -407,7 +407,7 @@ static Obj *reverse(Obj *p) {
 }
 
 // Skips the input until newline is found. Newline is one of \r, \r\n or \n.
-static void skip_line(char **strp) {
+static void skip_line(const char **strp) {
     for (;;) {
         if (!**strp)
             return;
@@ -423,7 +423,7 @@ static void skip_line(char **strp) {
 }
 
 // Reads a list. Note that '(' has already been read.
-static Obj *read_list(void *root, char **strp) {
+static Obj *read_list(void *root, const char **strp) {
     DEFINE3(obj, head, last);
     *head = Nil;
     for (;;) {
@@ -457,7 +457,7 @@ static Obj *intern(void *root, char *name) {
 }
 
 // Reader marcro ' (single quote). It reads an expression and returns (quote <expr>).
-static Obj *read_quote(void *root, char **strp) {
+static Obj *read_quote(void *root, const char **strp) {
     DEFINE2(sym, tmp);
     *sym = intern(root, "quote");
     *tmp = read_expr(root, strp);
@@ -466,13 +466,13 @@ static Obj *read_quote(void *root, char **strp) {
     return *tmp;
 }
 
-static int read_number(char **strp, int val) {
+static int read_number(const char **strp, int val) {
     while (isdigit(**strp))
         val = val * 10 + (*(*strp)++ - '0');
     return val;
 }
 
-static Obj *read_symbol(void *root, char **strp, char c) {
+static Obj *read_symbol(void *root, const char **strp, char c) {
     char buf[SYMBOL_MAX_LEN + 1];
     buf[0] = c;
     int len = 1;
@@ -485,7 +485,7 @@ static Obj *read_symbol(void *root, char **strp, char c) {
     return intern(root, buf);
 }
 
-static Obj *read_expr(void *root, char **strp) {
+static Obj *read_expr(void *root, const char **strp) {
     for (;;) {
         if (!**strp)
             return NULL;
@@ -997,7 +997,7 @@ static void init(void *root) {
     initialized = true;
 }
 
-char *exec_lisp(char **input_strp) {
+char *exec_lisp(const char **input_strp) {
     // On error
     if (setjmp(context) != 0)
         return NULL;

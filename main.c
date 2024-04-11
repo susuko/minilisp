@@ -10,7 +10,7 @@ int main(int argc, char **argv) {
     if (!fread(input_buf, 1, sizeof(input_buf), stdin))
         return 0;
     input_buf[INPUT_BUF_SIZE - 1] = '\0';
-    char *str = input_buf;
+    const char *str = input_buf;
 
     // The main loop
     for (;;) {
