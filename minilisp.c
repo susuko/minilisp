@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-jmp_buf context;
+static jmp_buf context;
 
 static __attribute((noreturn)) void error(char *fmt, ...) {
     va_list ap;
