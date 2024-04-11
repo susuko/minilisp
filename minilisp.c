@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+static bool initialized = false;
 static jmp_buf context;
 
 static __attribute((noreturn)) void error(char *fmt, ...) {
@@ -100,6 +101,8 @@ static Obj *Cparen = &(Obj){ TCPAREN };
 // The list containing all symbols. Such data structure is traditionally called the "obarray", but I
 // avoid using it as a variable name as this is not an array but a list.
 static Obj *Symbols;
+
+static Obj *GlobalEnv;
 
 //======================================================================
 // Memory management
@@ -265,6 +268,7 @@ static void *alloc_semispace() {
 // Copies the root objects.
 static void forward_root_objects(void *root) {
     Symbols = forward(Symbols);
+    GlobalEnv = forward(GlobalEnv);
     for (void **frame = root; frame; frame = *(void ***)frame)
         for (int i = 1; frame[i] != ROOT_END; i++)
             if (frame[i])
@@ -966,15 +970,16 @@ static void define_primitives(void *root, Obj **env) {
 // Entry point
 //======================================================================
 
-#define INPUT_BUF_SIZE 1024
-
 // Returns true if the environment variable is defined and not the empty string.
 static bool getEnvFlag(char *name) {
     char *val = getenv(name);
     return val && val[0];
 }
 
-int main(int argc, char **argv) {
+static void init(void *root) {
+    if (initialized)
+        return;
+
     // Debug flags
     debug_gc = getEnvFlag("MINILISP_DEBUG_GC");
     always_gc = getEnvFlag("MINILISP_ALWAYS_GC");
@@ -982,18 +987,45 @@ int main(int argc, char **argv) {
     // Memory allocation
     memory = alloc_semispace();
 
-    // On error
-    if (setjmp(context) != 0)
-        return 1;
-
     // Constants and primitives
     Symbols = Nil;
-    void *root = NULL;
-    DEFINE2(env, expr);
-    *env = make_env(root, &Nil, &Nil);
-    define_constants(root, env);
-    define_primitives(root, env);
+    GlobalEnv = make_env(root, &Nil, &Nil);
+    define_constants(root, &GlobalEnv);
+    define_primitives(root, &GlobalEnv);
 
+    initialized = true;
+}
+
+char *exec_lisp(char **input_strp) {
+    // On error
+    if (setjmp(context) != 0)
+        return NULL;
+
+    void *root = NULL;
+    DEFINE1(expr);
+
+    if (!initialized)
+        init(root);
+
+    *expr = read_expr(root, input_strp);
+    if (!*expr)
+        return NULL;
+    if (*expr == Cparen)
+        error("Stray close parenthesis");
+    if (*expr == Dot)
+        error("Stray dot");
+
+    Obj *eval_ret = eval(root, &GlobalEnv, expr);
+    int output_len = snprint(NULL, 0, eval_ret);
+    char *output_buf = malloc(output_len + 1);
+    snprint(output_buf, output_len + 1, eval_ret);
+
+    return output_buf;
+}
+
+#define INPUT_BUF_SIZE 1024
+
+int main(int argc, char **argv) {
     // Input string
     char input_buf[INPUT_BUF_SIZE] = {0};
     if (!fread(input_buf, 1, sizeof(input_buf), stdin))
@@ -1005,19 +1037,10 @@ int main(int argc, char **argv) {
     for (;;) {
         if (!*str)
             return 0;
-        *expr = read_expr(root, &str);
-        if (!*expr)
+        char *output = exec_lisp(&str);
+        if (!output)
             return 0;
-        if (*expr == Cparen)
-            error("Stray close parenthesis");
-        if (*expr == Dot)
-            error("Stray dot");
-
-        Obj *eval_ret = eval(root, env, expr);
-        int output_len = snprint(NULL, 0, eval_ret);
-        char *output_buf = malloc(output_len + 1);
-        snprint(output_buf, output_len + 1, eval_ret);
-        printf("%s\n", output_buf);
-        free(output_buf);
+        printf("%s\n", output);
+        free(output);
     }
 }
