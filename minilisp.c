@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -10,13 +11,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+jmp_buf context;
+
 static __attribute((noreturn)) void error(char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
     va_end(ap);
-    exit(1);
+    longjmp(context, 1);
 }
 
 //======================================================================
@@ -978,6 +981,10 @@ int main(int argc, char **argv) {
 
     // Memory allocation
     memory = alloc_semispace();
+
+    // On error
+    if (setjmp(context) != 0)
+        return 1;
 
     // Constants and primitives
     Symbols = Nil;
