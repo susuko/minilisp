@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "minilisp.h"
 
 static bool initialized = false;
 static jmp_buf context;
@@ -967,7 +968,7 @@ static void define_primitives(void *root, Obj **env) {
 }
 
 //======================================================================
-// Entry point
+// Execution
 //======================================================================
 
 // Returns true if the environment variable is defined and not the empty string.
@@ -1021,26 +1022,4 @@ char *exec_lisp(char **input_strp) {
     snprint(output_buf, output_len + 1, eval_ret);
 
     return output_buf;
-}
-
-#define INPUT_BUF_SIZE 1024
-
-int main(int argc, char **argv) {
-    // Input string
-    char input_buf[INPUT_BUF_SIZE] = {0};
-    if (!fread(input_buf, 1, sizeof(input_buf), stdin))
-        return 0;
-    input_buf[INPUT_BUF_SIZE - 1] = '\0';
-    char *str = input_buf;
-
-    // The main loop
-    for (;;) {
-        if (!*str)
-            return 0;
-        char *output = exec_lisp(&str);
-        if (!output)
-            return 0;
-        printf("%s\n", output);
-        free(output);
-    }
 }
